@@ -13,6 +13,8 @@ struct ContentView: View {
 
     @State private var showAddTable = false
     @State private var showSettings = false
+    @State private var tableToDelete: Table? = nil
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -28,8 +30,46 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .swipeActions(edge: .trailing) {
+                        
+                        
+                        // Delete button
+                        Button(role: .destructive) {
+                            tableToDelete = table
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Löschen", systemImage: "trash")
+                        }
+                        // Duplicate button
+                        Button {
+                            duplicate(table: table)
+                        } label: {
+                            Label("Duplizieren", systemImage: "doc.on.doc")
+                        }
+                        .tint(.blue)
+                            Button {
+                                editTitle(for: table)
+                            } label: {
+                                Label("Bearbeiten", systemImage: "pencil")
+                            }
+                            .tint(.orange)
+
+                            
+
+                            
+                        }
                 }
                 .onDelete { tables.remove(atOffsets: $0) }
+            }
+            .alert("Tabellen löschen?", isPresented: $showDeleteConfirmation, presenting: tableToDelete) { table in
+                Button("Abbrechen", role: .cancel) {}
+                Button("Löschen", role: .destructive) {
+                    if let index = tables.firstIndex(where: { $0.id == table.id }) {
+                        tables.remove(at: index)
+                    }
+                }
+            } message: { table in
+                Text("Willst du die Tabelle „\(table.name)“ wirklich löschen?")
             }
             .navigationTitle("Tabellen")
             .toolbar {
@@ -60,6 +100,38 @@ struct ContentView: View {
         }
         .onChange(of: tables) {
             UserDefaultsStore.save($0, key: "tables")
+        }
+    }
+}
+
+private extension ContentView {
+    private func duplicate(table: Table) {
+        let newTable = Table(
+            id: UUID(),
+            name: table.name + " Kopie",
+            columns: table.columns, type: table.type,
+            startValue: table.startValue
+        )
+        tables.append(newTable)
+    }
+    
+    private func editTitle(for table: Table) {
+        guard let index = tables.firstIndex(where: { $0.id == table.id }) else { return }
+
+        let alert = UIAlertController(title: "Tabellenname bearbeiten", message: nil, preferredStyle: .alert)
+        alert.addTextField { textField in
+            textField.text = tables[index].name
+        }
+        alert.addAction(UIAlertAction(title: "Abbrechen", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Speichern", style: .default) { _ in
+            if let newName = alert.textFields?.first?.text, !newName.isEmpty {
+                tables[index].name = newName
+            }
+        })
+
+        // Present the alert
+        if let window = UIApplication.shared.windows.first?.rootViewController {
+            window.present(alert, animated: true)
         }
     }
 }

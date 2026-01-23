@@ -5,6 +5,10 @@
 
 import SwiftUI
 
+
+
+
+
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -12,6 +16,7 @@ struct SettingsView: View {
 
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("accentColorName") private var accentColorName: String = AccentColor.blue.rawValue
+    @AppStorage("useNumberPad") var useNumberPad: Bool = true
 
     // MARK: - Developer Debug Settings
 
@@ -74,12 +79,13 @@ struct SettingsView: View {
                         .tag($0.rawValue)
                 }
             }
+            Toggle("Nur Zahlen (NumberPad)", isOn: $useNumberPad)
         }
     }
 
     private var appInfoSection: some View {
         Section("App") {
-            Text("Version 0.1.2")
+            Text("Version 0.2.1")
         }
     }
 

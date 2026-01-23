@@ -9,7 +9,7 @@ import Foundation
 
 struct Table: Identifiable, Hashable, Codable {
     let id: UUID
-    let name: String
+    var name: String
     let columns: Int
     let type: TableType
     let startValue: Double

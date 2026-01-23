@@ -5,10 +5,28 @@
 //  Created by David Orban on 21.01.26.
 //
 
+
 import SwiftUI
+
+#if canImport(UIKit)
+extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+}
+#endif
 
 struct TableDetailView: View {
     let table: Table
+    /// Called when the user requests to duplicate the table via swipe.
+    var onDuplicate: (() -> Void)? = nil
+
+    @AppStorage("useNumberPad") private var useNumberPad: Bool = true
 
     // One storage key per table
     private var storageKey: String {
@@ -27,8 +45,13 @@ struct TableDetailView: View {
     @State private var selectedColumnIndex: Int = 0
     @State private var remainingValues: [Double] = []
     @State private var keyboardHeight: CGFloat = 0
+    @State private var isKeyboardVisible: Bool = false
     @State private var showExportSheet = false
     @State private var exportURL: URL?
+    @State private var sortAscending: Bool = false
+    @State private var previousRanking: [Int] = []
+    @State private var items: [(index: Int, name: String, value: Double)] = []
+    @State private var trends: [RankingTrend] = []
 
     init(table: Table) {
         self.table = table
@@ -43,10 +66,33 @@ struct TableDetailView: View {
         column.values.reduce(0, +)
     }
 
+    private func columnData() -> [(index: Int, name: String, value: Double)] {
+        columns.enumerated().map { index, column in
+            if table.type == .countdown {
+                let remaining = remainingValues.indices.contains(index)
+                    ? remainingValues[index]
+                    : table.startValue
+                return (index, column.name, remaining)
+            } else {
+                return (index, column.name, sum(for: column))
+            }
+        }
+    }
+
+    private func sortedColumnData() -> [(index: Int, name: String, value: Double)] {
+        let data = columnData()
+        return data.sorted {
+            sortAscending ? $0.value < $1.value : $0.value > $1.value
+        }
+    }
+    
+
     var body: some View {
         ScrollViewReader { proxy in
+            // Wrap the main VStack in a ZStack to allow swipeActions
             ScrollView {
-                VStack(spacing: 16) {
+                ZStack {
+                    VStack(spacing: 16) {
                     if columns.isEmpty {
                         ProgressView()
                     } else {
@@ -92,8 +138,10 @@ struct TableDetailView: View {
                                         .frame(minWidth: 150)
                                         .background(.thinMaterial)
                                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                                        .id(index)
                                     } else {
                                         ColumnView(column: $columns[index])
+                                            .id(index)
                                     }
                                 }
                             }
@@ -102,6 +150,43 @@ struct TableDetailView: View {
                         
                         Divider()
                             .padding(.vertical)
+
+                        // Summary for highest / lowest column
+                        if !columns.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("Übersicht")
+                                        .font(.headline)
+
+                                    Spacer()
+
+                                    Button {
+                                        sortAscending.toggle()
+                                    } label: {
+                                        Image(systemName: "arrow.up.arrow.down")
+                                    }
+                                }
+
+                                // ForEach ohne Berechnungen inline
+                                ForEach(items.indices, id: \.self) { rank in
+                                    RankingRowView(
+                                        rank: rank,
+                                        item: items[rank],
+                                        trend: trends.indices.contains(rank) ? trends[rank] : .none,
+                                        onTap: {
+                                            withAnimation {
+                                                proxy.scrollTo(items[rank].index, anchor: .center)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            .padding()
+                            .background(.ultraThinMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .padding(.horizontal)
+                        }
+    
                         
                         // Input section for adding new values
                         VStack(alignment: .leading, spacing: 12) {
@@ -117,7 +202,7 @@ struct TableDetailView: View {
                             
                             HStack {
                                 TextField("Wert eingeben", text: $newValue)
-                                    .keyboardType(.numbersAndPunctuation)
+                                    .keyboardType(useNumberPad ? .numberPad : .numbersAndPunctuation)
                                     .textFieldStyle(.roundedBorder)
                                     .autocorrectionDisabled(true)
                                     .textInputAutocapitalization(.never)
@@ -135,6 +220,7 @@ struct TableDetailView: View {
                                                 columns[selectedColumnIndex].values.append(value)
                                             }
                                             newValue = ""
+                                            hapticSubmit()
                                         }
                                     }
                                 
@@ -152,6 +238,7 @@ struct TableDetailView: View {
                                             columns[selectedColumnIndex].values.append(value)
                                         }
                                         newValue = ""
+                                        hapticSubmit()
                                     }
                                 }
                             }
@@ -159,10 +246,23 @@ struct TableDetailView: View {
                         .padding(.horizontal)
                         .id("inputField")
                     }
+                    }
+                    .padding(.top)
                 }
-                .padding(.top)
+                // Swipe action for duplicating the table
+                .swipeActions(edge: .trailing) {
+                    Button(action: {
+                        onDuplicate?()
+                    }) {
+                        Label("Duplizieren", systemImage: "doc.on.doc")
+                    }
+                    .tint(.blue)
+                }
             }
-            .padding(.bottom, keyboardHeight)
+            .padding(.bottom)
+            .onTapGesture {
+                hideKeyboard()
+            }
             .onAppear { loadColumns() }
             .onChange(of: columns) { newColumns in saveColumns(newColumns) }
             .navigationTitle(table.name)
@@ -188,13 +288,32 @@ struct TableDetailView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
                 if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
                     keyboardHeight = keyboardFrame.height
+                    isKeyboardVisible = true
                     withAnimation {
-                        proxy.scrollTo("inputField", anchor: .bottom)
+                        proxy.scrollTo("inputField", anchor: .center)
                     }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 keyboardHeight = 0
+                isKeyboardVisible = false
+            }
+            .scrollDismissesKeyboard(.interactively)
+            // Calculate items and trends outside the ViewBuilder
+            .onAppear {
+                let sortedItems = sortedColumnData()
+                items = sortedItems
+                trends = sortedItems.indices.map { _ in .none }
+            }
+            .onChange(of: columns) { _ in
+                let sortedItems = sortedColumnData()
+                let currentRanking = sortedItems.map { $0.index }
+                let newTrends = sortedItems.indices.map { index in
+                    previousRanking.isEmpty ? .none : trend(for: sortedItems[index].index, currentRanking: currentRanking)
+                }
+                items = sortedItems
+                trends = newTrends
+                previousRanking = currentRanking
             }
         }
     }
@@ -311,6 +430,107 @@ struct TableDetailView: View {
         } catch {
             print("PDF Export fehlgeschlagen:", error)
         }
+    }
+    
+    
+    private func trend(for index: Int, currentRanking: [Int]) -> RankingTrend {
+        guard let previousPosition = previousRanking.firstIndex(of: index),
+              let currentPosition = currentRanking.firstIndex(of: index)
+        else {
+            return .none
+        }
+
+        if currentPosition < previousPosition {
+            return .up
+        } else if currentPosition > previousPosition {
+            return .down
+        } else {
+            return .none
+        }
+    }
+    
+    // MARK: - Haptic Feedback
+    private func hapticSubmit() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+    
+    @ViewBuilder
+    private func rankingBackground() -> some View {
+        if table.type == .countdown {
+            LinearGradient(
+                colors: [.green, .yellow, .red],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .opacity(0.25)
+        } else {
+            Color.clear
+        }
+    }
+}
+
+enum RankingTrend {
+    case up
+    case down
+    case none
+
+    var icon: String? {
+        switch self {
+        case .up: return "arrow.up"
+        case .down: return "arrow.down"
+        case .none: return nil
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .up: return .green
+        case .down: return .red
+        case .none: return .clear
+        }
+    }
+}
+
+struct RankingRowView: View {
+    let rank: Int
+    let item: (index: Int, name: String, value: Double)
+    let trend: RankingTrend
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack {
+            if rank == 0 {
+                Text("🥇")
+            } else if rank == 1 {
+                Text("🥈")
+            } else if rank == 2 {
+                Text("🥉")
+            }
+
+            if let icon = trend.icon {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(trend.color)
+            }
+
+            Text(item.name)
+                .fontWeight(rank < 3 ? .bold : .regular)
+
+            Spacer()
+
+            Text(item.value, format: .number)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(backgroundView)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGesture(perform: onTap)
+    }
+
+    @ViewBuilder
+    private var backgroundView: some View {
+        Color.clear
     }
 }
 
