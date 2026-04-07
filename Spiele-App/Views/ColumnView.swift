@@ -10,7 +10,7 @@ import SwiftUI
 
 
 struct ColumnView: View {
-    @Binding var column: TableDetailView.ColumnData
+    @Binding var column: ColumnData
 
     var body: some View {
         let sum = column.values.reduce(0, +)

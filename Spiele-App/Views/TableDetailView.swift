@@ -23,44 +23,22 @@ extension View {
 
 struct TableDetailView: View {
     let table: Table
-    /// Called when the user requests to duplicate the table via swipe.
     var onDuplicate: (() -> Void)? = nil
 
     @AppStorage("useNumberPad") private var useNumberPad: Bool = true
 
-    // One storage key per table
     private var storageKey: String {
         "columns_\(table.id.uuidString)"
-    }
-
-    // Each column has a name and its own values
-    struct ColumnData: Codable, Identifiable, Equatable {
-        var id = UUID()
-        var name: String
-        var values: [Double]
     }
 
     @State private var columns: [ColumnData] = []
     @State private var newValue: String = ""
     @State private var selectedColumnIndex: Int = 0
     @State private var remainingValues: [Double] = []
-    @State private var keyboardHeight: CGFloat = 0
-    @State private var isKeyboardVisible: Bool = false
-    @State private var showExportSheet = false
-    @State private var exportURL: URL?
     @State private var sortAscending: Bool = false
     @State private var previousRanking: [Int] = []
     @State private var items: [(index: Int, name: String, value: Double)] = []
     @State private var trends: [RankingTrend] = []
-
-    init(table: Table) {
-        self.table = table
-        if table.type == .countdown {
-            _remainingValues = State(initialValue: [])
-        } else {
-            _remainingValues = State(initialValue: [])
-        }
-    }
 
     private func sum(for column: ColumnData) -> Double {
         column.values.reduce(0, +)
@@ -89,25 +67,21 @@ struct TableDetailView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            // Wrap the main VStack in a ZStack to allow swipeActions
             ScrollView {
                 ZStack {
                     VStack(spacing: 16) {
                     if columns.isEmpty {
                         ProgressView()
                     } else {
-                        // Horizontal ScrollView for columns
                         ScrollView(.horizontal, showsIndicators: true) {
                             HStack(alignment: .top, spacing: 16) {
                                 ForEach($columns.indices, id: \.self) { index in
                                     if table.type == .countdown {
                                         VStack(alignment: .leading, spacing: 8) {
-                                            // Editable column name
                                             TextField("Spaltenname", text: $columns[index].name)
                                                 .font(.headline)
                                                 .textFieldStyle(.roundedBorder)
-                                            
-                                            // ScrollView for values with delete button
+
                                             ScrollView {
                                                 VStack(alignment: .leading, spacing: 4) {
                                                     ForEach(columns[index].values.indices, id: \.self) { valueIndex in
@@ -116,7 +90,6 @@ struct TableDetailView: View {
                                                             Spacer()
                                                             Button(action: {
                                                                 columns[index].values.remove(at: valueIndex)
-                                                                // Update remaining value after deletion
                                                                 let sumValues = columns[index].values.reduce(0, +)
                                                                 remainingValues[index] = max(table.startValue - sumValues, 0)
                                                             }) {
@@ -128,8 +101,7 @@ struct TableDetailView: View {
                                                 }
                                             }
                                             .frame(height: 200)
-                                            
-                                            // Remaining value for this column
+
                                             Text("Verbleibend: \(remainingValues.indices.contains(index) ? remainingValues[index] : table.startValue, format: .number)")
                                                 .font(.subheadline)
                                                 .foregroundStyle(.secondary)
@@ -151,7 +123,6 @@ struct TableDetailView: View {
                         Divider()
                             .padding(.vertical)
 
-                        // Summary for highest / lowest column
                         if !columns.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack {
@@ -167,7 +138,6 @@ struct TableDetailView: View {
                                     }
                                 }
 
-                                // ForEach ohne Berechnungen inline
                                 ForEach(items.indices, id: \.self) { rank in
                                     RankingRowView(
                                         rank: rank,
@@ -186,9 +156,7 @@ struct TableDetailView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(.horizontal)
                         }
-    
-                        
-                        // Input section for adding new values
+
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Neuen Wert hinzufügen")
                                 .font(.headline)
@@ -207,39 +175,11 @@ struct TableDetailView: View {
                                     .autocorrectionDisabled(true)
                                     .textInputAutocapitalization(.never)
                                     .onSubmit {
-                                        if let value = Double(newValue.replacingOccurrences(of: ",", with: ".")) {
-                                            if table.type == .countdown {
-                                                if remainingValues.indices.contains(selectedColumnIndex) {
-                                                    let newRemaining = max(remainingValues[selectedColumnIndex] - value, 0)
-                                                    if newRemaining >= 0 {
-                                                        columns[selectedColumnIndex].values.append(value)
-                                                        remainingValues[selectedColumnIndex] = newRemaining
-                                                    }
-                                                }
-                                            } else {
-                                                columns[selectedColumnIndex].values.append(value)
-                                            }
-                                            newValue = ""
-                                            hapticSubmit()
-                                        }
+                                        addValueToSelectedColumn()
                                     }
                                 
                                 Button("Hinzufügen") {
-                                    if let value = Double(newValue.replacingOccurrences(of: ",", with: ".")) {
-                                        if table.type == .countdown {
-                                            if remainingValues.indices.contains(selectedColumnIndex) {
-                                                let newRemaining = max(remainingValues[selectedColumnIndex] - value, 0)
-                                                if newRemaining >= 0 {
-                                                    columns[selectedColumnIndex].values.append(value)
-                                                    remainingValues[selectedColumnIndex] = newRemaining
-                                                }
-                                            }
-                                        } else {
-                                            columns[selectedColumnIndex].values.append(value)
-                                        }
-                                        newValue = ""
-                                        hapticSubmit()
-                                    }
+                                    addValueToSelectedColumn()
                                 }
                             }
                         }
@@ -263,8 +203,13 @@ struct TableDetailView: View {
             .onTapGesture {
                 hideKeyboard()
             }
-            .onAppear { loadColumns() }
-            .onChange(of: columns) { newColumns in saveColumns(newColumns) }
+            .onAppear {
+                loadColumns()
+                updateRanking(resetTrends: true)
+            }
+            .onChange(of: columns) {
+                saveColumns(columns)
+            }
             .navigationTitle(table.name)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -280,40 +225,20 @@ struct TableDetailView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showExportSheet) {
-                if let exportURL {
-                    ShareLink(item: exportURL)
-                }
-            }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
-                if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-                    keyboardHeight = keyboardFrame.height
-                    isKeyboardVisible = true
+                if notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect != nil {
                     withAnimation {
                         proxy.scrollTo("inputField", anchor: .center)
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-                keyboardHeight = 0
-                isKeyboardVisible = false
-            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in }
             .scrollDismissesKeyboard(.interactively)
-            // Calculate items and trends outside the ViewBuilder
-            .onAppear {
-                let sortedItems = sortedColumnData()
-                items = sortedItems
-                trends = sortedItems.indices.map { _ in .none }
+            .onChange(of: columns) {
+                updateRanking(resetTrends: false)
             }
-            .onChange(of: columns) { _ in
-                let sortedItems = sortedColumnData()
-                let currentRanking = sortedItems.map { $0.index }
-                let newTrends = sortedItems.indices.map { index in
-                    previousRanking.isEmpty ? .none : trend(for: sortedItems[index].index, currentRanking: currentRanking)
-                }
-                items = sortedItems
-                trends = newTrends
-                previousRanking = currentRanking
+            .onChange(of: sortAscending) {
+                updateRanking(resetTrends: true)
             }
         }
     }
@@ -334,7 +259,6 @@ struct TableDetailView: View {
                 }
             }
         } else {
-            // Initial setup with default column names
             columns = (1...table.columns).map {
                 ColumnData(name: "Spalte \($0)", values: [])
             }
@@ -349,6 +273,46 @@ struct TableDetailView: View {
         if let data = try? JSONEncoder().encode(columns) {
             UserDefaults.standard.set(data, forKey: storageKey)
         }
+    }
+
+    private func addValueToSelectedColumn() {
+        guard !columns.isEmpty else { return }
+        guard let value = Double(newValue.replacingOccurrences(of: ",", with: ".")) else { return }
+
+        if table.type == .countdown {
+            guard remainingValues.indices.contains(selectedColumnIndex) else { return }
+
+            let newRemaining = max(remainingValues[selectedColumnIndex] - value, 0)
+            columns[selectedColumnIndex].values.append(value)
+            remainingValues[selectedColumnIndex] = newRemaining
+        } else {
+            columns[selectedColumnIndex].values.append(value)
+        }
+
+        newValue = ""
+        advanceToNextColumn()
+        hapticSubmit()
+    }
+
+    private func advanceToNextColumn() {
+        guard !columns.isEmpty else { return }
+        selectedColumnIndex = (selectedColumnIndex + 1) % columns.count
+    }
+
+    private func updateRanking(resetTrends: Bool) {
+        let sortedItems = sortedColumnData()
+        let currentRanking = sortedItems.map(\.index)
+
+        if resetTrends || previousRanking.isEmpty {
+            trends = sortedItems.map { _ in .none }
+        } else {
+            trends = sortedItems.map { item in
+                trend(for: item.index, currentRanking: currentRanking)
+            }
+        }
+
+        items = sortedItems
+        previousRanking = currentRanking
     }
 
 // MARK: - Export
@@ -367,8 +331,7 @@ struct TableDetailView: View {
 
         do {
             try csv.write(to: url, atomically: true, encoding: .utf8)
-            exportURL = url
-            showExportSheet = true
+            presentShareSheet(for: url)
         } catch {
             print("CSV Export fehlgeschlagen:", error)
         }
@@ -425,11 +388,33 @@ struct TableDetailView: View {
                 }
             }
 
-            exportURL = url
-            showExportSheet = true
+            presentShareSheet(for: url)
         } catch {
             print("PDF Export fehlgeschlagen:", error)
         }
+    }
+
+    private func presentShareSheet(for url: URL) {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = scene.windows.first(where: \.isKeyWindow)?.rootViewController
+        else {
+            return
+        }
+
+        let activityViewController = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+
+        if let popoverPresentationController = activityViewController.popoverPresentationController {
+            popoverPresentationController.sourceView = rootViewController.view
+            popoverPresentationController.sourceRect = CGRect(
+                x: rootViewController.view.bounds.midX,
+                y: rootViewController.view.bounds.midY,
+                width: 0,
+                height: 0
+            )
+            popoverPresentationController.permittedArrowDirections = []
+        }
+
+        rootViewController.present(activityViewController, animated: true)
     }
     
     
@@ -453,20 +438,6 @@ struct TableDetailView: View {
     private func hapticSubmit() {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
-    }
-    
-    @ViewBuilder
-    private func rankingBackground() -> some View {
-        if table.type == .countdown {
-            LinearGradient(
-                colors: [.green, .yellow, .red],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .opacity(0.25)
-        } else {
-            Color.clear
-        }
     }
 }
 
@@ -500,12 +471,9 @@ struct RankingRowView: View {
 
     var body: some View {
         HStack {
-            if rank == 0 {
-                Text("🥇")
-            } else if rank == 1 {
-                Text("🥈")
-            } else if rank == 2 {
-                Text("🥉")
+            if let symbolName = placementSymbolName, let symbolColor = placementSymbolColor {
+                Image(systemName: symbolName)
+                    .foregroundStyle(symbolColor)
             }
 
             if let icon = trend.icon {
@@ -528,7 +496,24 @@ struct RankingRowView: View {
         .onTapGesture(perform: onTap)
     }
 
-    @ViewBuilder
+    private var placementSymbolName: String? {
+        switch rank {
+        case 0: return "medal.fill"
+        case 1: return "medal"
+        case 2: return "rosette"
+        default: return nil
+        }
+    }
+
+    private var placementSymbolColor: Color? {
+        switch rank {
+        case 0: return .yellow
+        case 1: return .gray
+        case 2: return .brown
+        default: return nil
+        }
+    }
+
     private var backgroundView: some View {
         Color.clear
     }

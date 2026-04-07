@@ -72,20 +72,24 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
 
-            Picker("Akzentfarbe", selection: $accentColorName) {
-                ForEach(AccentColor.allCases) {
-                    Label($0.title, systemImage: "circle.fill")
-                        .foregroundStyle($0.color)
-                        .tag($0.rawValue)
+     /*     Picker("Akzentfarbe", selection: $accentColorName) {
+                ForEach(AccentColor.allCases) { accentColor in
+                    HStack {
+                        Circle()
+                            .fill(accentColor.color)
+                            .frame(width: 12, height: 12)
+                        Text(accentColor.title)
+                    }
+                    .tag(accentColor.rawValue)
                 }
-            }
+            }*/
             Toggle("Nur Zahlen (NumberPad)", isOn: $useNumberPad)
         }
     }
 
     private var appInfoSection: some View {
         Section("App") {
-            Text("Version 0.2.1")
+            Text("Version 0.3.0")
         }
     }
 
