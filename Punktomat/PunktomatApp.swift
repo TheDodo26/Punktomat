@@ -1,6 +1,6 @@
 //
-//  Spiele_AppApp.swift
-//  Spiele-App
+//  PunktomatApp.swift
+//  Punktomat
 //
 //  Created by David Orban on 20.01.26.
 //
