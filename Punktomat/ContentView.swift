@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  Spiele-App
+//  Punktomat
 //
 //  Created by David Orban on 20.01.26.
 //
@@ -8,9 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var tables: [Table] =
-        UserDefaultsStore.load("tables") ?? []
-
+    @State private var tables: [Table] = UserDefaultsStore.load("tables") ?? []
     @State private var showAddTable = false
     @State private var showSettings = false
     @State private var tableToDelete: Table? = nil
@@ -21,7 +19,9 @@ struct ContentView: View {
             List {
                 ForEach(tables) { table in
                     NavigationLink {
-                        TableDetailView(table: table)
+                        TableDetailView(table: table) {
+                            duplicate(table: table)
+                        }
                     } label: {
                         VStack(alignment: .leading) {
                             Text(table.name)
@@ -31,33 +31,27 @@ struct ContentView: View {
                         }
                     }
                     .swipeActions(edge: .trailing) {
-                        
-                        
-                        // Delete button
                         Button(role: .destructive) {
                             tableToDelete = table
                             showDeleteConfirmation = true
                         } label: {
                             Label("Löschen", systemImage: "trash")
                         }
-                        // Duplicate button
+
                         Button {
                             duplicate(table: table)
                         } label: {
                             Label("Duplizieren", systemImage: "doc.on.doc")
                         }
                         .tint(.blue)
-                            Button {
-                                editTitle(for: table)
-                            } label: {
-                                Label("Bearbeiten", systemImage: "pencil")
-                            }
-                            .tint(.orange)
 
-                            
-
-                            
+                        Button {
+                            editTitle(for: table)
+                        } label: {
+                            Label("Bearbeiten", systemImage: "pencil")
                         }
+                        .tint(.orange)
+                    }
                 }
                 .onDelete { tables.remove(atOffsets: $0) }
             }
@@ -99,7 +93,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: tables) {
-            UserDefaultsStore.save($0, key: "tables")
+            UserDefaultsStore.save(tables, key: "tables")
         }
     }
 }
@@ -129,9 +123,9 @@ private extension ContentView {
             }
         })
 
-        // Present the alert
-        if let window = UIApplication.shared.windows.first?.rootViewController {
-            window.present(alert, animated: true)
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = scene.windows.first(where: \.isKeyWindow)?.rootViewController {
+            rootViewController.present(alert, animated: true)
         }
     }
 }
