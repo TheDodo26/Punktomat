@@ -1,6 +1,6 @@
 //
 //  SettingsView.swift
-//  Spiele-App
+//  Punktomat
 //
 
 import SwiftUI

@@ -1,6 +1,6 @@
 //
 //  ColumnView.swift
-//  Spiele-App
+//  Punktomat
 //
 //  Created by David Orban on 21.01.26.
 //
