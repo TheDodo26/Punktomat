@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct Spiele_AppApp: App {
+struct PunktomatApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
